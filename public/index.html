@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipDownloader - Video & Drama Episode Downloader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><polygon points='5 3 19 12 5 21 5 3' fill='%236366f1'/></svg>" />
+  <!-- HLS.js for in-browser HLS playback -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.8/hls.min.js"></script>
+  <!-- mux.js for TS to MP4 transmuxing in browser -->
+  <script src="https://cdn.jsdelivr.net/npm/mux.js@6.3.0/dist/mux.min.js"></script>
+  <!-- JSZip for in-browser ZIP creation on Netlify / Serverless -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+        </div>
+        <div>
+          <h1>ClipDownloader</h1>
+          <p class="tagline">Download any drama episode, series, or video as MP4 & ZIP</p>
+        </div>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-accent">In-Browser MP4</span>
+        <span class="badge badge-subtle">Batch ZIP Support</span>
+      </div>
+    </header>
+
+    <!-- Search & Input Section -->
+    <section class="input-section glass-card">
+      <form id="url-form" class="url-form">
+        <div class="input-wrapper">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input
+            type="url"
+            id="url-input"
+            placeholder="Paste any episode link (e.g. https://en.hdrama.net/series/.../episode-1)"
+            required
+            autocomplete="off"
+          />
+          <button type="button" id="paste-btn" class="btn-icon" title="Paste from clipboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
+        </div>
+        <button type="submit" id="fetch-btn" class="btn btn-primary">
+          <span class="btn-text">Fetch Episode</span>
+          <span class="spinner" hidden></span>
+        </button>
+      </form>
+
+      <div class="sample-links">
+        <span class="sample-label">Quick test:</span>
+        <button type="button" class="sample-chip" data-url="https://en.hdrama.net/series/hero-husband-s-apocalypse-harem-31001691861/episode-1">
+          Hero Husband's Apocalypse Harem (Ep 1)
+        </button>
+      </div>
+    </section>
+
+    <!-- Error / Status Alert -->
+    <div id="alert-box" class="alert-box" hidden></div>
+
+    <!-- Active Target Episode Card (Show download button) -->
+    <section id="target-episode-section" class="target-episode-section glass-card" hidden>
+      <div class="episode-details">
+        <div class="poster-container">
+          <img id="target-poster" src="" alt="Cover Art" class="episode-poster" />
+          <div class="source-pill" id="target-source">HDrama</div>
+        </div>
+
+        <div class="episode-meta">
+          <span class="badge badge-outline" id="target-ep-badge">Episode 1</span>
+          <h2 id="target-series-title" class="series-title">Series Title</h2>
+          <p id="target-ep-subtitle" class="ep-subtitle">Ready for instant download as MP4</p>
+
+          <div class="action-buttons-group">
+            <button id="download-current-btn" class="btn btn-download btn-lg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span id="download-current-text">Download Episode 1 (MP4)</span>
+            </button>
+
+            <button id="play-video-btn" class="btn btn-primary btn-lg">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span id="play-video-text">Download & Play</span>
+            </button>
+          </div>
+
+          <!-- Video Preview Container (Download and Play) -->
+          <div id="video-preview-wrapper" class="video-preview-wrapper" hidden>
+            <div class="player-top-bar">
+              <span class="player-status-badge" id="player-status-badge">Ready</span>
+              <button type="button" id="close-player-btn" class="btn-text-action">Hide Player</button>
+            </div>
+            <video id="video-player" controls playsinline preload="auto"></video>
+            <div class="player-bottom-bar">
+              <span id="player-info-text" class="player-info-text">Loaded in memory</span>
+              <button type="button" id="save-playing-video-btn" class="btn btn-download btn-sm" hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Save MP4
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Full Episodes List Section ("fetch all eps and download all as zip") -->
+    <section id="all-episodes-section" class="all-episodes-section glass-card" hidden>
+      <div class="section-header">
+        <div>
+          <h3 class="section-title">All Episodes</h3>
+          <p class="section-subtitle">Select episodes to download individually or package together as a single ZIP.</p>
+        </div>
+
+        <!-- Global Batch Actions -->
+        <div class="batch-action-bar">
+          <div class="selection-tools">
+            <button type="button" id="select-all-btn" class="btn-text-action">Select All</button>
+            <span class="divider">·</span>
+            <button type="button" id="deselect-all-btn" class="btn-text-action">Deselect All</button>
+            <span class="selected-count-badge" id="selected-count-text">0 selected</span>
+          </div>
+
+          <button id="download-zip-btn" class="btn btn-gradient btn-lg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="21 8 21 21 3 21 3 8"></polyline>
+              <rect x="1" y="3" width="22" height="5"></rect>
+              <line x1="10" y1="12" x2="14" y2="12"></line>
+            </svg>
+            <span id="download-zip-text">Download All as ZIP</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Search & Filter bar for episodes -->
+      <div class="episodes-filter-bar">
+        <input type="text" id="episodes-search" placeholder="Search episode number (e.g. 5, 20)..." />
+        <span id="episodes-count-pill" class="pill">0 Episodes Found</span>
+      </div>
+
+      <!-- Episode Grid -->
+      <div id="episodes-grid" class="episodes-grid">
+        <!-- Injected via JavaScript -->
+      </div>
+    </section>
+  </div>
+
+  <!-- Batch ZIP Progress Modal -->
+  <div id="progress-modal" class="modal-backdrop" hidden>
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <div class="modal-title-wrapper">
+          <div class="spinner-pulse"></div>
+          <div>
+            <h4 class="modal-title" id="modal-title">Preparing ZIP Archive</h4>
+            <p class="modal-subtitle" id="modal-subtitle">Downloading and packaging episodes...</p>
+          </div>
+        </div>
+        <button id="cancel-batch-btn" class="btn-close" title="Cancel Batch">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-percentage"></span>
+          <span id="progress-detail"></span>
+        </div>
+
+        <div id="modal-success-box" class="modal-success-box" hidden>
+          <svg class="success-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <p>ZIP Archive is ready!</p>
+          <a id="modal-download-link" href="#" class="btn btn-primary btn-lg">Download ZIP Archive</a>
+          <span class="subtle-note">Your download should start automatically. If not, click above.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
