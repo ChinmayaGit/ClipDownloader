@@ -27,7 +27,9 @@ app.post('/api/info', async (req, res) => {
     // Resolve target episode stream
     let targetStream = null;
     try {
-      if (info.source === 'HDrama' && info.bookId) {
+      if (info.targetStream) {
+        targetStream = info.targetStream;
+      } else if (info.source === 'HDrama' && info.bookId) {
         targetStream = await fetchEpisodeStream(info.bookId, info.targetEpisode || 1);
       } else if (info.directStream) {
         targetStream = info.directStream;

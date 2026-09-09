@@ -49,6 +49,18 @@ const episodesSearch = document.getElementById('episodes-search');
 const episodesCountPill = document.getElementById('episodes-count-pill');
 const episodesGrid = document.getElementById('episodes-grid');
 
+// Unlock Card Elements
+const unlockCard = document.getElementById('unlock-card');
+const unlockHeaderBox = document.getElementById('unlock-header-box');
+const unlockOptionsBox = document.getElementById('unlock-options-box');
+const unlockSuccessBox = document.getElementById('unlock-success-box');
+const unlockSuccessTitle = document.getElementById('unlock-success-title');
+const unlockSuccessDesc = document.getElementById('unlock-success-desc');
+const unlockTokenInput = document.getElementById('unlock-token-input');
+const unlockTokenBtn = document.getElementById('unlock-token-btn');
+const headerBookmarklet = document.getElementById('header-bookmarklet');
+const inlineBookmarkletLink = document.getElementById('inline-bookmarklet-link');
+
 // Batch Modal
 const progressModal = document.getElementById('progress-modal');
 const modalTitle = document.getElementById('modal-title');
@@ -109,8 +121,18 @@ urlForm.addEventListener('submit', async (e) => {
     currentSeriesData = result.data;
     renderTargetEpisode(currentSeriesData);
     renderAllEpisodes(currentSeriesData);
+
+    const hasStreams = currentSeriesData.targetStream?.streamUrl || currentSeriesData.episodes?.[0]?.streamUrl;
+    if (!hasStreams && unlockCard) {
+      unlockCard.hidden = false;
+      unlockCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   } catch (err) {
-    showAlert(err.message || 'Error communicating with server', 'error');
+    if (url.includes('hdrama.net') || url.includes('/series/')) {
+      handleHDramaClientFallback(url);
+    } else {
+      showAlert(err.message || 'Error communicating with server', 'error');
+    }
   } finally {
     setLoading(false);
   }
@@ -118,6 +140,9 @@ urlForm.addEventListener('submit', async (e) => {
 
 // 4. Render Target Episode Card
 function renderTargetEpisode(data) {
+  targetPoster.onerror = () => {
+    targetPoster.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 150"><rect fill="%231e293b" width="100" height="150"/><text x="50" y="75" fill="%2364748b" font-size="12" text-anchor="middle" dominant-baseline="middle">Cover</text></svg>';
+  };
   targetPoster.src = data.poster || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 150"><rect fill="%231e293b" width="100" height="150"/></svg>';
   targetSource.textContent = data.source || 'HDrama';
   targetEpBadge.textContent = `Episode ${data.targetEpisode || 1}`;
@@ -339,16 +364,32 @@ async function fetchEpisodeBlob(serial, signal, onProgress) {
 
   if (currentSeriesData.targetEpisode === serial && currentSeriesData.targetStream?.streamUrl) {
     streamUrl = currentSeriesData.targetStream.streamUrl;
-  } else if (currentSeriesData.bookId) {
-    const res = await fetch(`/api/stream-info?bookId=${currentSeriesData.bookId}&serial=${serial}`, { signal });
-    const json = await res.json();
-    if (!res.ok || !json.success) throw new Error(json.error || 'Failed to fetch stream');
-    streamUrl = json.data.streamUrl;
-  } else if (currentSeriesData.directStream?.streamUrl) {
+  } else {
+    const ep = currentSeriesData.episodes?.find((e) => e.serial === serial);
+    if (ep?.streamUrl) {
+      streamUrl = ep.streamUrl;
+    }
+  }
+
+  if (!streamUrl && currentSeriesData.bookId) {
+    try {
+      const res = await fetch(`/api/stream-info?bookId=${currentSeriesData.bookId}&serial=${serial}`, { signal });
+      const json = await res.json();
+      if (res.ok && json.success && json.data?.streamUrl) {
+        streamUrl = json.data.streamUrl;
+      }
+    } catch {}
+  } else if (!streamUrl && currentSeriesData.directStream?.streamUrl) {
     streamUrl = currentSeriesData.directStream.streamUrl;
   }
 
-  if (!streamUrl) throw new Error('No stream URL resolved');
+  if (!streamUrl) {
+    if (unlockCard) {
+      unlockCard.hidden = false;
+      unlockCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    throw new Error(`Episode ${serial} stream is locked. Use the 1-Click Bookmarklet or paste page source into the unlock box above.`);
+  }
 
   const cleanTitle = sanitizeFilename(currentSeriesData.seriesTitle);
   const padSerial = String(serial).padStart(3, '0');
@@ -515,14 +556,8 @@ async function triggerSingleDownload(serial) {
     saveBlob(blob, filename);
   } catch (err) {
     if (err.name !== 'AbortError' && err.message !== 'Download cancelled') {
-      console.warn('Browser direct download fallback:', err.message);
-      // Fallback to server streaming endpoint if local
-      const params = new URLSearchParams({
-        bookId: currentSeriesData.bookId || '',
-        serial: serial,
-        title: currentSeriesData.seriesTitle || 'Video',
-      });
-      window.location.href = `/api/download-single?${params.toString()}`;
+      console.error('Download error:', err);
+      showAlert(`Download failed for Episode ${serial}: ${err.message}`, 'error');
     }
   } finally {
     if (btn) {
@@ -757,11 +792,13 @@ function setLoading(isLoading) {
 
 function showAlert(message, type = 'error') {
   alertBox.textContent = message;
+  alertBox.className = `alert-box alert-${type}`;
   alertBox.hidden = false;
 }
 
 function hideAlert() {
   alertBox.hidden = true;
+  alertBox.className = 'alert-box';
   alertBox.textContent = '';
 }
 
@@ -774,6 +811,14 @@ function resetUI() {
   savePlayingVideoBtn.hidden = true;
   playVideoText.textContent = 'Download & Play';
   playVideoBtn.disabled = false;
+
+  if (unlockCard) {
+    unlockCard.hidden = true;
+    if (unlockHeaderBox) unlockHeaderBox.hidden = false;
+    if (unlockOptionsBox) unlockOptionsBox.hidden = false;
+    if (unlockSuccessBox) unlockSuccessBox.hidden = true;
+    if (unlockTokenInput) unlockTokenInput.value = '';
+  }
 
   if (videoPlayer) {
     videoPlayer.pause();
@@ -794,5 +839,343 @@ function resetUI() {
   }
 }
 
+// 12. HDrama Client-side Fallback & WebCrypto Unlock Engine
+const HDRAMA_DEFAULT_KEY_B64 = 'QC6Ir2trghxRAyyyWZEOEFR4GgLhnfQ4A19I3QBlQkc=';
+
+/**
+ * Parses series slug, target episode number, and bookId from an HDrama URL on the client
+ */
+function parseHDramaClientUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    let slug = '';
+    let targetEpisode = 1;
+
+    const seriesIdx = parts.indexOf('series');
+    if (seriesIdx !== -1 && parts.length > seriesIdx + 1) {
+      slug = parts[seriesIdx + 1];
+      if (parts.length > seriesIdx + 2) {
+        const epMatch = parts[seriesIdx + 2].match(/episode-(\d+)/i);
+        if (epMatch) targetEpisode = parseInt(epMatch[1], 10);
+      }
+    } else {
+      for (const p of parts) {
+        const epMatch = p.match(/episode-(\d+)/i);
+        if (epMatch) targetEpisode = parseInt(epMatch[1], 10);
+        else if (!slug && p !== 'series') slug = p;
+      }
+    }
+
+    let bookId = null;
+    const bookIdMatch = slug.match(/(\d{8,})/);
+    if (bookIdMatch) bookId = bookIdMatch[1];
+
+    let title = slug
+      ? slug
+          .replace(/-\d{8,}$/, '')
+          .split('-')
+          .filter(Boolean)
+          .map((w) => (w === 's' ? "'s" : w.charAt(0).toUpperCase() + w.slice(1)))
+          .join(' ')
+          .replace(/\s+'s/g, "'s")
+      : 'HDrama Series';
+
+    return { domain: parsed.origin, slug, bookId, targetEpisode, title };
+  } catch {
+    return { domain: '', slug: '', bookId: null, targetEpisode: 1, title: 'HDrama Series' };
+  }
+}
+
+/**
+ * Renders fallback episodes when Netlify serverless is blocked by Cloudflare
+ */
+function handleHDramaClientFallback(url) {
+  const meta = parseHDramaClientUrl(url);
+  const total = Math.max(meta.targetEpisode || 1, 60);
+
+  const episodes = [];
+  for (let i = 1; i <= total; i++) {
+    episodes.push({
+      serial: i,
+      title: `Episode ${i}`,
+      url: `${meta.domain || 'https://en.hdrama.net'}/series/${meta.slug || 'series'}/episode-${i}`,
+      qualities: [],
+    });
+  }
+
+  currentSeriesData = {
+    source: 'HDrama',
+    seriesTitle: meta.title,
+    slug: meta.slug,
+    bookId: meta.bookId,
+    poster: '',
+    targetEpisode: meta.targetEpisode,
+    totalEpisodes: episodes.length,
+    episodes,
+    targetStream: null,
+  };
+
+  renderTargetEpisode(currentSeriesData);
+  renderAllEpisodes(currentSeriesData);
+
+  if (unlockCard) {
+    unlockCard.hidden = false;
+    unlockCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  showAlert(
+    'Cloudflare blocked Netlify server from reading stream keys directly. Click the 1-Click Bookmarklet on HDrama or paste the page source below to unlock!',
+    'warning'
+  );
+}
+
+/**
+ * Decrypts an HDrama AES-256-GCM token directly in the browser via WebCrypto
+ */
+async function decryptTokenWebCrypto(encB64, keyB64 = HDRAMA_DEFAULT_KEY_B64) {
+  try {
+    if (!encB64 || typeof encB64 !== 'string') return null;
+    const cleanB64 = encB64.trim();
+
+    const rawKey = Uint8Array.from(atob(keyB64), (c) => c.charCodeAt(0));
+    const cryptoKey = await window.crypto.subtle.importKey(
+      'raw',
+      rawKey,
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+
+    const encData = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0));
+    if (encData.length < 28) return null;
+
+    const iv = encData.subarray(0, 12);
+    const ciphertextAndTag = encData.subarray(12);
+
+    const decryptedBuf = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv, tagLength: 128 },
+      cryptoKey,
+      ciphertextAndTag
+    );
+
+    return new TextDecoder().decode(decryptedBuf);
+  } catch (err) {
+    console.warn('WebCrypto decryption error:', err);
+    return null;
+  }
+}
+
+/**
+ * Extracts encrypted token or stream URL from raw text or full HTML page source
+ */
+function extractEncryptedTokenOrUrl(text) {
+  if (!text || typeof text !== 'string') return null;
+  text = text.trim();
+
+  // 1. Direct GoodShort stream URL
+  if (text.includes('/hls/') && (text.includes('goodshort') || text.includes('goodbos'))) {
+    const urlMatch = text.match(/https?:\/\/[^\s"'<>]+\/hls\/\d+[^\s"'<>]*/i);
+    if (urlMatch) return { type: 'url', url: urlMatch[0] };
+  }
+
+  // 2. "enc":"..." or \"enc\":\"...\" in JSON/HTML
+  const encMatch = text.match(/\\?"enc\\?"\s*:\s*\\?"([^"\\\s]+)\\?"/i);
+  if (encMatch && encMatch[1]) {
+    return { type: 'enc', token: encMatch[1] };
+  }
+
+  // 3. Raw Base64 string
+  if (/^[A-Za-z0-9+/=]{40,}$/.test(text)) {
+    return { type: 'enc', token: text };
+  }
+
+  // 4. Any large Base64 substring
+  const b64Match = text.match(/[A-Za-z0-9+/=]{64,300}/);
+  if (b64Match) {
+    return { type: 'enc', token: b64Match[0] };
+  }
+
+  return null;
+}
+
+/**
+ * Connects decrypted stream URL, calculates sequential episode stream IDs, and updates UI
+ */
+function handleDirectDecryptedStream(decryptedUrl, originUrl = null) {
+  if (!decryptedUrl || !decryptedUrl.includes('/hls/')) return false;
+
+  const idMatch = decryptedUrl.match(/\/hls\/(\d+)/);
+  if (!idMatch) return false;
+
+  const currentEpId = parseInt(idMatch[1], 10);
+
+  // Extract or preserve bookId
+  let bookId = currentSeriesData?.bookId;
+  const bookIdParamMatch = decryptedUrl.match(/[?&]bookId=(\d+)/);
+  if (bookIdParamMatch) {
+    bookId = bookIdParamMatch[1];
+  }
+
+  let targetEpisode = currentSeriesData?.targetEpisode || 1;
+  let seriesTitle = currentSeriesData?.seriesTitle;
+  let slug = currentSeriesData?.slug;
+  let totalEpisodes = currentSeriesData?.totalEpisodes || 60;
+
+  if (originUrl) {
+    const meta = parseHDramaClientUrl(originUrl);
+    if (meta.targetEpisode) targetEpisode = meta.targetEpisode;
+    if (!seriesTitle || seriesTitle === 'HDrama Series') seriesTitle = meta.title;
+    if (!slug) slug = meta.slug;
+    if (!bookId && meta.bookId) bookId = meta.bookId;
+  }
+
+  if (!seriesTitle) seriesTitle = 'HDrama Series';
+
+  // Base Episode 1 ID: sequential offset
+  const baseEpisode1Id = currentEpId - (targetEpisode - 1);
+
+  // Construct all episode streams
+  const episodes = [];
+  const maxEp = Math.max(totalEpisodes, targetEpisode, 60);
+  for (let i = 1; i <= maxEp; i++) {
+    const epId = baseEpisode1Id + (i - 1);
+    const stream = `https://goodshort.goodbos.online/hls/${epId}?bookId=${bookId || ''}&q=720p`;
+    episodes.push({
+      serial: i,
+      title: `Episode ${i}`,
+      url: originUrl || '',
+      qualities: [],
+      streamUrl: stream,
+    });
+  }
+
+  const targetStream = {
+    streamUrl: decryptedUrl,
+    source: 'GoodShort',
+    type: 'hls',
+  };
+
+  currentSeriesData = {
+    source: 'HDrama',
+    seriesTitle,
+    slug: slug || 'series',
+    bookId,
+    poster: currentSeriesData?.poster || '',
+    targetEpisode,
+    totalEpisodes: episodes.length,
+    episodes,
+    targetStream,
+    directStream: targetStream,
+  };
+
+  renderTargetEpisode(currentSeriesData);
+  renderAllEpisodes(currentSeriesData);
+
+  if (unlockCard) {
+    unlockCard.hidden = false;
+    if (unlockHeaderBox) unlockHeaderBox.hidden = true;
+    if (unlockOptionsBox) unlockOptionsBox.hidden = true;
+    if (unlockSuccessBox) {
+      if (unlockSuccessTitle) unlockSuccessTitle.textContent = `All ${episodes.length} Episodes Unlocked!`;
+      if (unlockSuccessDesc) unlockSuccessDesc.textContent = 'GoodShort stream keys successfully resolved. You can now download individual episodes, watch in player, or batch export to ZIP.';
+      unlockSuccessBox.hidden = false;
+    }
+  }
+
+  showAlert(`Successfully unlocked ${episodes.length} episodes! Ready for download.`, 'success');
+  return true;
+}
+
+/**
+ * Unlocks stream from pasted text (HTML page source or raw token)
+ */
+async function unlockFromPastedContent(rawText) {
+  if (!rawText) {
+    showAlert('Please paste the page source code or encrypted token first.', 'error');
+    return;
+  }
+
+  const extracted = extractEncryptedTokenOrUrl(rawText);
+  if (!extracted) {
+    showAlert('Could not find an encrypted token or stream URL in the pasted text. Make sure you copied the page source (Ctrl+U) or token.', 'error');
+    return;
+  }
+
+  let streamUrl = null;
+  if (extracted.type === 'url') {
+    streamUrl = extracted.url;
+  } else if (extracted.type === 'enc') {
+    streamUrl = await decryptTokenWebCrypto(extracted.token);
+  }
+
+  if (!streamUrl) {
+    showAlert('Failed to decrypt the token. Please make sure the token is valid.', 'error');
+    return;
+  }
+
+  const currentUrl = urlInput.value.trim() || window.location.href;
+  const success = handleDirectDecryptedStream(streamUrl, currentUrl);
+  if (success) {
+    targetSection.scrollIntoView({ behavior: 'smooth' });
+  } else {
+    showAlert('Could not extract episode ID from the decrypted stream.', 'error');
+  }
+}
+
+// 13. Bookmarklet Setup & Parameter Auto-detect
+function setupBookmarkletLinks() {
+  const origin = window.location.origin;
+  const bookmarkletCode = `javascript:(function(){var h=document.documentElement.innerHTML;var m=h.match(/"enc":"([^"]+)"/)||h.match(/\\\\"enc\\\\":\\\\"([^\\\\"]+)\\\\"/);var e=m?encodeURIComponent(m[1]):"";var u=encodeURIComponent(window.location.href);window.open("${origin}/?url="+u+(e?"&enc="+e:""),"_blank");})();`;
+
+  if (headerBookmarklet) {
+    headerBookmarklet.href = bookmarkletCode;
+  }
+  if (inlineBookmarkletLink) {
+    inlineBookmarkletLink.href = bookmarkletCode;
+  }
+}
+
+async function checkUrlParamsOnLoad() {
+  setupBookmarkletLinks();
+
+  const params = new URLSearchParams(window.location.search);
+  const paramUrl = params.get('url');
+  const paramEnc = params.get('enc');
+
+  if (paramUrl) {
+    urlInput.value = paramUrl;
+  }
+
+  if (paramEnc) {
+    const decryptedUrl = await decryptTokenWebCrypto(paramEnc);
+    if (decryptedUrl) {
+      handleDirectDecryptedStream(decryptedUrl, paramUrl);
+      return;
+    }
+  }
+
+  if (paramUrl && !paramEnc) {
+    urlForm.dispatchEvent(new Event('submit'));
+  }
+}
+
+// Attach Unlock Card Button Handlers
+if (unlockTokenBtn) {
+  unlockTokenBtn.addEventListener('click', () => {
+    unlockFromPastedContent(unlockTokenInput.value.trim());
+  });
+}
+
+if (unlockTokenInput) {
+  unlockTokenInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      unlockFromPastedContent(unlockTokenInput.value.trim());
+    }
+  });
+}
+
 // Initialize on page load
 resetUI();
+checkUrlParamsOnLoad();
+

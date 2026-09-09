@@ -319,6 +319,25 @@ body {
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #fca5a5;
+  transition: all 0.2s ease;
+}
+
+.alert-box.alert-warning {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fcd34d;
+}
+
+.alert-box.alert-info {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+.alert-box.alert-success {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
 }
 
 /* Target Episode Card */
@@ -803,4 +822,149 @@ body {
     justify-content: space-between;
   }
 }
+
+/* Bookmarklet & Unlock Helper Card */
+.bookmarklet-pill {
+  text-decoration: none;
+  cursor: grab;
+  border: 1px dashed rgba(99, 102, 241, 0.6);
+  background: rgba(99, 102, 241, 0.2);
+  transition: all 0.2s ease;
+}
+
+.bookmarklet-pill:hover {
+  background: rgba(99, 102, 241, 0.35);
+  border-color: #818cf8;
+}
+
+.unlock-card {
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  background: rgba(30, 27, 75, 0.5);
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius-md);
+}
+
+.unlock-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.unlock-icon {
+  font-size: 1.75rem;
+}
+
+.unlock-header h4 {
+  font-size: 1.05rem;
+  color: #facc15;
+  margin-bottom: 0.25rem;
+}
+
+.unlock-header p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.unlock-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.unlock-method {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.method-num {
+  background: #6366f1;
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.unlock-method strong {
+  font-size: 0.875rem;
+  color: var(--text-main);
+}
+
+.unlock-method p {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.unlock-input-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.unlock-input-group input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.75rem;
+  color: #fff;
+  font-size: 0.825rem;
+}
+
+kbd {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.15rem 0.35rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.unlock-success-box {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-sm);
+}
+
+.unlock-icon.success-icon {
+  background: #10b981;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.unlock-success-box h4 {
+  font-size: 1rem;
+  color: #34d399;
+  margin-bottom: 0.2rem;
+}
+
+.unlock-success-box p {
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  margin: 0;
+}
+
+
 

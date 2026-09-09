@@ -32,8 +32,9 @@
         </div>
       </div>
       <div class="header-badges">
-        <span class="badge badge-accent">In-Browser MP4</span>
-        <span class="badge badge-subtle">Batch ZIP Support</span>
+        <a id="header-bookmarklet" href="#" class="badge badge-accent bookmarklet-pill" title="Drag this button to your Bookmarks Bar! Click it on any HDrama page to open and download instantly.">
+          ⚡ Drag Bookmarklet to Bar
+        </a>
       </div>
     </header>
 
@@ -75,6 +76,44 @@
 
     <!-- Error / Status Alert -->
     <div id="alert-box" class="alert-box" hidden></div>
+
+    <!-- Cloudflare Stream Unlock Helper (For Netlify) -->
+    <div id="unlock-card" class="unlock-card glass-card" hidden>
+      <div id="unlock-header-box" class="unlock-header">
+        <div class="unlock-icon">⚡</div>
+        <div>
+          <h4>HDrama Stream Key Helper</h4>
+          <p>Cloudflare blocked Netlify from reading this stream key directly. Choose either instant 1-second unlock option below:</p>
+        </div>
+      </div>
+      <div id="unlock-options-box" class="unlock-options">
+        <div class="unlock-method">
+          <span class="method-num">1</span>
+          <div>
+            <strong>1-Click Bookmarklet (Instant):</strong>
+            <p>Drag this <a id="inline-bookmarklet-link" href="#" class="badge badge-accent bookmarklet-pill" title="Drag to your Bookmarks Bar">⚡ HDrama Grabber</a> to your browser's Bookmarks bar. When you are on any HDrama episode page, click it to auto-download!</p>
+          </div>
+        </div>
+        <div class="unlock-method">
+          <span class="method-num">2</span>
+          <div style="flex: 1;">
+            <strong>Paste Page Source / Token:</strong>
+            <p>On HDrama, press <kbd>Ctrl+U</kbd> (or <kbd>Cmd+Option+U</kbd>), select all, copy, and paste here:</p>
+            <div class="unlock-input-group">
+              <input type="text" id="unlock-token-input" placeholder="Paste source code or encrypted token here..." />
+              <button type="button" id="unlock-token-btn" class="btn btn-primary btn-sm">Unlock All Episodes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="unlock-success-box" class="unlock-success-box" hidden>
+        <div class="unlock-icon success-icon">✓</div>
+        <div>
+          <h4 id="unlock-success-title">All Episodes Unlocked!</h4>
+          <p id="unlock-success-desc">GoodShort stream keys successfully resolved. You can now download individual episodes, watch in player, or batch export to ZIP.</p>
+        </div>
+      </div>
+    </div>
 
     <!-- Active Target Episode Card (Show download button) -->
     <section id="target-episode-section" class="target-episode-section glass-card" hidden>

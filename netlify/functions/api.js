@@ -29,7 +29,9 @@ router.post('/info', async (req, res) => {
     // Pre-resolve target episode stream
     let targetStream = null;
     try {
-      if (info.source === 'HDrama' && info.bookId) {
+      if (info.targetStream) {
+        targetStream = info.targetStream;
+      } else if (info.source === 'HDrama' && info.bookId) {
         targetStream = await fetchEpisodeStream(info.bookId, info.targetEpisode || 1);
       } else if (info.directStream) {
         targetStream = info.directStream;
@@ -67,10 +69,27 @@ router.get('/stream-info', async (req, res) => {
   }
 });
 
+// 3. Redirect to direct stream URL for browser download
+router.get('/download-single', async (req, res) => {
+  try {
+    const { bookId, serial } = req.query;
+    if (!bookId || !serial) {
+      return res.status(400).json({ error: 'bookId and serial are required' });
+    }
+
+    const stream = await fetchEpisodeStream(bookId, parseInt(serial, 10));
+    if (stream && stream.streamUrl) {
+      return res.redirect(302, stream.streamUrl);
+    }
+    res.status(404).json({ error: 'Stream not found' });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to resolve stream' });
+  }
+});
+
 // Handle paths under both /api and root
 app.use('/api', router);
 app.use('/.netlify/functions/api', router);
 app.use('/', router);
 
 module.exports.handler = serverless(app);
-

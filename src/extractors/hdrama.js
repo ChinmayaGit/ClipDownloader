@@ -1,54 +1,109 @@
+const http2 = require('http2');
 const { decryptHdramaToken } = require('../utils/crypto');
 
-const GOOGLEBOT_UA =
-  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
 const CHROME_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
+// In-memory cache of resolved base episode IDs per bookId
+const bookIdBaseMap = new Map();
+
 /**
- * Resilient fetch that bypasses Cloudflare bot checks using Googlebot and realistic headers.
+ * Resilient HTTP/2 fetch that negotiates h2 ALPN to pass Cloudflare checks.
  */
-async function fetchWithBypass(url, options = {}) {
-  const referer = options.referer || 'https://en.hdrama.net/';
-  const userAgents = [
-    GOOGLEBOT_UA,
-    'curl/8.7.1',
-    CHROME_UA,
-  ];
-
-  let lastError = null;
-
-  for (const ua of userAgents) {
+function fetchH2(url, customHeaders = {}) {
+  return new Promise((resolve, reject) => {
     try {
-      const headers = {
-        'User-Agent': ua,
-        Accept: options.accept || '*/*',
-        Referer: referer,
-        'Accept-Language': 'en-US,en;q=0.9',
-        ...options.headers,
-      };
+      const parsed = new URL(url);
+      const origin = parsed.origin;
+      const path = parsed.pathname + parsed.search;
 
-      const res = await fetch(url, {
-        method: options.method || 'GET',
-        headers,
-        signal: options.signal || AbortSignal.timeout(options.timeout || 12000),
+      const client = http2.connect(origin, {
+        rejectUnauthorized: true,
       });
 
-      if (res.ok) {
-        return res;
-      }
+      const timeoutId = setTimeout(() => {
+        try { client.destroy(); } catch {}
+        reject(new Error(`HTTP2 request timeout: ${url}`));
+      }, 10000);
 
-      if (res.status !== 403 && res.status !== 503) {
-        return res;
-      }
+      client.on('error', (err) => {
+        clearTimeout(timeoutId);
+        reject(err);
+      });
 
-      lastError = new Error(`HTTP ${res.status} from ${url}`);
+      const headers = {
+        ':method': 'GET',
+        ':path': path,
+        ':authority': parsed.hostname,
+        ':scheme': 'https',
+        'user-agent': CHROME_UA,
+        'referer': 'https://en.hdrama.net/',
+        'accept': customHeaders['accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'accept-language': 'en-US,en;q=0.9',
+        ...customHeaders,
+      };
+
+      const req = client.request(headers);
+
+      let statusCode = 200;
+      req.on('response', (resHeaders) => {
+        statusCode = parseInt(resHeaders[':status'], 10);
+      });
+
+      let body = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', () => {
+        clearTimeout(timeoutId);
+        client.close();
+        if (statusCode >= 200 && statusCode < 400) {
+          resolve({
+            status: statusCode,
+            text: () => Promise.resolve(body),
+            json: () => Promise.resolve(JSON.parse(body)),
+          });
+        } else {
+          reject(new Error(`HTTP ${statusCode} from ${url}`));
+        }
+      });
+
+      req.on('error', (err) => {
+        clearTimeout(timeoutId);
+        client.close();
+        reject(err);
+      });
+
+      req.end();
     } catch (err) {
-      lastError = err;
+      reject(err);
     }
-  }
+  });
+}
 
-  throw lastError || new Error(`Failed to fetch ${url}`);
+/**
+ * Resilient fetch that tries HTTP/2 first, then standard fetch
+ */
+async function fetchWithBypass(url, options = {}) {
+  try {
+    return await fetchH2(url, options.headers || {});
+  } catch (h2Err) {
+    console.warn('HTTP/2 fetch failed, falling back to standard fetch:', h2Err.message);
+    const res = await fetch(url, {
+      method: options.method || 'GET',
+      headers: {
+        'User-Agent': CHROME_UA,
+        Referer: 'https://en.hdrama.net/',
+        Accept: options.accept || '*/*',
+        ...options.headers,
+      },
+      signal: options.signal || AbortSignal.timeout(options.timeout || 10000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+    return res;
+  }
 }
 
 /**
@@ -141,7 +196,6 @@ async function fetchHDramaInfo(url) {
   let html = '';
   try {
     const res = await fetchWithBypass(url, {
-      referer: 'https://en.hdrama.net/',
       accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     });
     html = await res.text();
@@ -211,11 +265,6 @@ async function fetchHDramaInfo(url) {
     }
   }
 
-  // Fallback poster if not found in HTML
-  if (!poster && bookId) {
-    poster = `https://acf.goodshort.com/videobook/${bookId}/cover.jpg`;
-  }
-
   // 5. Extract all episodes
   const episodes = [];
   if (flightPayload) {
@@ -260,10 +309,8 @@ async function fetchHDramaInfo(url) {
     }
   }
 
-  // Sort episodes by serial number
   episodes.sort((a, b) => a.serial - b.serial);
 
-  // If episodes couldn't be parsed from HTML, generate standard 60 episodes
   if (episodes.length === 0) {
     const totalFallback = Math.max(parsedMeta.targetEpisode || 1, 60);
     for (let i = 1; i <= totalFallback; i++) {
@@ -276,16 +323,36 @@ async function fetchHDramaInfo(url) {
     }
   }
 
-  // 6. Check inline source
+  // 6. Decrypt inline source & calculate base episode ID
   let inlineStreamUrl = null;
+  let baseEpisode1Id = null;
+
   if (flightPayload) {
     const sourceFirstMatch = flightPayload.match(/"sourceFirst":\s*(\{[^}]+\})/);
     if (sourceFirstMatch) {
       const encMatch = sourceFirstMatch[1].match(/"enc":"([^"]+)"/);
       if (encMatch) {
         inlineStreamUrl = decryptHdramaToken(encMatch[1]);
+        if (inlineStreamUrl) {
+          const idMatch = inlineStreamUrl.match(/\/hls\/(\d+)/);
+          if (idMatch) {
+            const currentEpId = parseInt(idMatch[1], 10);
+            baseEpisode1Id = currentEpId - (parsedMeta.targetEpisode - 1);
+            if (bookId) {
+              bookIdBaseMap.set(bookId, baseEpisode1Id);
+            }
+          }
+        }
       }
     }
+  }
+
+  // Pre-attach stream URLs to all episodes if base ID is determined
+  if (baseEpisode1Id && bookId) {
+    episodes.forEach((ep) => {
+      const epId = baseEpisode1Id + (ep.serial - 1);
+      ep.streamUrl = `https://goodshort.goodbos.online/hls/${epId}?bookId=${bookId}&q=720p`;
+    });
   }
 
   return {
@@ -297,7 +364,12 @@ async function fetchHDramaInfo(url) {
     targetEpisode: parsedMeta.targetEpisode,
     totalEpisodes: episodes.length,
     episodes,
-    inlineStreamUrl: parsedMeta.targetEpisode === 1 ? inlineStreamUrl : null,
+    inlineStreamUrl,
+    targetStream: inlineStreamUrl ? {
+      streamUrl: inlineStreamUrl,
+      source: 'GoodShort',
+      type: 'hls',
+    } : null,
   };
 }
 
@@ -313,59 +385,69 @@ async function fetchEpisodeStream(bookId, serialNumber, domain = 'https://en.hdr
     throw new Error('Missing bookId to fetch episode stream');
   }
 
+  // If already in baseEpisode map, return immediately with zero latency
+  const cachedBase = bookIdBaseMap.get(bookId);
+  if (cachedBase) {
+    const epId = cachedBase + (serialNumber - 1);
+    return {
+      streamUrl: `https://goodshort.goodbos.online/hls/${epId}?bookId=${bookId}&q=720p`,
+      source: 'GoodShort',
+      type: 'hls',
+    };
+  }
+
   const apiUrl = `${domain}/api/episode-source/${bookId}/${serialNumber}?lang=en`;
 
   try {
     const response = await fetchWithBypass(apiUrl, {
-      referer: `${domain}/`,
-      accept: 'application/json, text/plain, */*',
+      headers: {
+        accept: 'application/json, text/plain, */*',
+      },
     });
 
     const data = await response.json();
     const descriptor = data?.descriptor;
-    if (!descriptor) {
-      throw new Error(`No stream descriptor found for episode ${serialNumber}`);
-    }
+    if (descriptor) {
+      const chain = descriptor.chain || [];
+      let decryptedUrl = null;
+      let streamType = 'hls';
+      let streamSource = descriptor.source || 'GoodShort';
 
-    const chain = descriptor.chain || [];
-    let decryptedUrl = null;
-    let streamType = 'hls';
-    let streamSource = descriptor.source || 'GoodShort';
-
-    for (const item of chain) {
-      if (item.enc) {
-        decryptedUrl = decryptHdramaToken(item.enc);
-        if (decryptedUrl) {
-          streamType = item.type || 'hls';
-          streamSource = item.source || streamSource;
-          break;
+      for (const item of chain) {
+        if (item.enc) {
+          decryptedUrl = decryptHdramaToken(item.enc);
+          if (decryptedUrl) {
+            streamType = item.type || 'hls';
+            streamSource = item.source || streamSource;
+            break;
+          }
         }
       }
-    }
 
-    if (!decryptedUrl && descriptor.enc) {
-      decryptedUrl = decryptHdramaToken(descriptor.enc);
-    }
+      if (!decryptedUrl && descriptor.enc) {
+        decryptedUrl = decryptHdramaToken(descriptor.enc);
+      }
 
-    if (decryptedUrl) {
-      return {
-        streamUrl: decryptedUrl,
-        source: streamSource,
-        type: streamType,
-      };
+      if (decryptedUrl) {
+        const idMatch = decryptedUrl.match(/\/hls\/(\d+)/);
+        if (idMatch) {
+          const epId = parseInt(idMatch[1], 10);
+          const base1 = epId - (serialNumber - 1);
+          bookIdBaseMap.set(bookId, base1);
+        }
+
+        return {
+          streamUrl: decryptedUrl,
+          source: streamSource,
+          type: streamType,
+        };
+      }
     }
   } catch (err) {
     console.warn(`Stream fetch warning for EP ${serialNumber}:`, err.message);
   }
 
-  // Direct GoodShort fallback if API fails
-  // Every episode on GoodShort CDN is served from goodbos.online with the bookId
-  const fallbackUrl = `https://goodshort.goodbos.online/hls/${bookId}_${serialNumber}?bookId=${bookId}&q=720p`;
-  return {
-    streamUrl: fallbackUrl,
-    source: 'GoodShort',
-    type: 'hls',
-  };
+  throw new Error(`Could not resolve stream URL for Episode ${serialNumber}`);
 }
 
 module.exports = {
@@ -374,4 +456,6 @@ module.exports = {
   fetchHDramaInfo,
   fetchEpisodeStream,
   fetchWithBypass,
+  fetchH2,
+  bookIdBaseMap,
 };
