@@ -8,6 +8,7 @@
     "dev": "node server.js",
     "share": "npx localtunnel --port 3000",
     "build": "echo 'Build ready for Netlify'",
+    "deploy": "netlify deploy --prod --no-build --dir=public --functions=netlify/functions",
     "test": "node test.js"
   },
   "keywords": [],
