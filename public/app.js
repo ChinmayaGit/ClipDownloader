@@ -1124,15 +1124,43 @@ async function unlockFromPastedContent(rawText) {
 }
 
 // 13. Bookmarklet Setup & Parameter Auto-detect
-function setupBookmarkletLinks() {
+function getBookmarkletCode() {
   const origin = window.location.origin;
-  const bookmarkletCode = `javascript:(function(){var h=document.documentElement.innerHTML;var m=h.match(/"enc":"([^"]+)"/)||h.match(/\\\\"enc\\\\":\\\\"([^\\\\"]+)\\\\"/);var e=m?encodeURIComponent(m[1]):"";var u=encodeURIComponent(window.location.href);window.open("${origin}/?url="+u+(e?"&enc="+e:""),"_blank");})();`;
+  return `javascript:(function(){var h=document.documentElement.innerHTML;var m=h.match(/"enc":"([^"]+)"/)||h.match(/\\\\"enc\\\\":\\\\"([^\\\\"]+)\\\\"/);var e=m?encodeURIComponent(m[1]):"";var u=encodeURIComponent(window.location.href);window.location.href="${origin}/?url="+u+(e?"&enc="+e:"");})();`;
+}
+
+function setupBookmarkletLinks() {
+  const bookmarkletCode = getBookmarkletCode();
 
   if (headerBookmarklet) {
     headerBookmarklet.href = bookmarkletCode;
   }
   if (inlineBookmarkletLink) {
     inlineBookmarkletLink.href = bookmarkletCode;
+  }
+
+  const copyHandler = async (btn) => {
+    try {
+      await navigator.clipboard.writeText(getBookmarkletCode());
+      const origText = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      showAlert('Bookmarklet code copied! Follow the 3-step guide below to save as a bookmark on Android.', 'info');
+      setTimeout(() => {
+        btn.textContent = origText;
+      }, 3000);
+    } catch {
+      showAlert('Could not access clipboard. Please copy manually from the link.', 'warning');
+    }
+  };
+
+  const copyMobileBtn = document.getElementById('copy-mobile-btn');
+  if (copyMobileBtn) {
+    copyMobileBtn.addEventListener('click', () => copyHandler(copyMobileBtn));
+  }
+
+  const headerCopyMobileBtn = document.getElementById('header-copy-mobile-btn');
+  if (headerCopyMobileBtn) {
+    headerCopyMobileBtn.addEventListener('click', () => copyHandler(headerCopyMobileBtn));
   }
 }
 

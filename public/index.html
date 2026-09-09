@@ -33,8 +33,11 @@
       </div>
       <div class="header-badges">
         <a id="header-bookmarklet" href="#" class="badge badge-accent bookmarklet-pill" title="Drag this button to your Bookmarks Bar! Click it on any HDrama page to open and download instantly.">
-          ⚡ Drag Bookmarklet to Bar
+          ⚡ Drag Bookmarklet (PC)
         </a>
+        <button type="button" id="header-copy-mobile-btn" class="badge badge-accent bookmarklet-pill" style="cursor: pointer;" title="Copy bookmarklet code for Android Chrome/Firefox">
+          📱 Mobile Grabber
+        </button>
       </div>
     </header>
 
@@ -89,16 +92,35 @@
       <div id="unlock-options-box" class="unlock-options">
         <div class="unlock-method">
           <span class="method-num">1</span>
-          <div>
-            <strong>1-Click Bookmarklet (Instant):</strong>
-            <p>Drag this <a id="inline-bookmarklet-link" href="#" class="badge badge-accent bookmarklet-pill" title="Drag to your Bookmarks Bar">⚡ HDrama Grabber</a> to your browser's Bookmarks bar. When you are on any HDrama episode page, click it to auto-download!</p>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.4rem;">
+              <strong>1-Click Bookmarklet:</strong>
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <a id="inline-bookmarklet-link" href="#" class="badge badge-accent bookmarklet-pill" title="Drag to your Bookmarks Bar (PC/Mac)">⚡ Drag Bookmarklet (PC)</a>
+                <button type="button" id="copy-mobile-btn" class="badge badge-accent bookmarklet-pill" style="cursor: pointer;">📱 Copy Android Code</button>
+              </div>
+            </div>
+            <p><strong>PC/Mac:</strong> Drag <em>⚡ Drag Bookmarklet</em> to your bookmarks bar. Click it on any HDrama episode to auto-unlock!</p>
+            <p><strong>Android:</strong> Tap <em>📱 Copy Android Code</em>, bookmark any page in Chrome, name it <code>hdrama</code>, and paste the code as the URL.</p>
+            
+            <details style="margin-top: 0.5rem; background: rgba(0,0,0,0.3); padding: 0.6rem 0.85rem; border-radius: 6px; border: 1px solid var(--border-subtle); font-size: 0.825rem;">
+              <summary style="cursor: pointer; color: #818cf8; font-weight: 600;">📱 How to set up on Android Chrome (1 minute, one-time)</summary>
+              <ol style="margin: 0.5rem 0 0 1.25rem; padding: 0; line-height: 1.6; color: #cbd5e1;">
+                <li>Tap <strong>📱 Copy Android Code</strong> above.</li>
+                <li>In Chrome on Android, tap the <strong>3 dots (⋮)</strong> &gt; tap the <strong>☆ (Star)</strong> to bookmark this page.</li>
+                <li>Tap <strong>3 dots (⋮) &gt; Bookmarks</strong> &gt; tap the 3 dots next to the bookmark &gt; <strong>Edit</strong>.</li>
+                <li>Set Name to <code>hdrama</code>, and in the URL field, delete the link and <strong>paste the copied code</strong>. Tap back to save.</li>
+                <li><strong>How to use anytime:</strong> When on any HDrama episode, tap Chrome's address bar, type <code>hdrama</code>, and tap the bookmark suggestion! It auto-redirects to ClipDownloader with all 60 episodes unlocked!</li>
+              </ol>
+            </details>
           </div>
         </div>
         <div class="unlock-method">
           <span class="method-num">2</span>
           <div style="flex: 1;">
             <strong>Paste Page Source / Token:</strong>
-            <p>On HDrama, press <kbd>Ctrl+U</kbd> (or <kbd>Cmd+Option+U</kbd>), select all, copy, and paste here:</p>
+            <p><strong>PC/Mac:</strong> Press <kbd>Ctrl+U</kbd> on HDrama, select all, copy, and paste here.</p>
+            <p><strong>Android:</strong> In Chrome's address bar on HDrama, type <code>view-source:</code> before the URL (e.g. <code>view-source:https://en.hdrama.net/...</code>), select all, copy, and paste below:</p>
             <div class="unlock-input-group">
               <input type="text" id="unlock-token-input" placeholder="Paste source code or encrypted token here..." />
               <button type="button" id="unlock-token-btn" class="btn btn-primary btn-sm">Unlock All Episodes</button>
